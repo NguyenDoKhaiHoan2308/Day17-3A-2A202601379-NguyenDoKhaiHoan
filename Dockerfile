@@ -8,7 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /workspace
 
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --upgrade pip && pip install -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    PIP_NO_CACHE_DIR=0 pip install \
+    --timeout 120 \
+    --retries 10 \
+    -r /tmp/requirements.txt
 
 COPY . /workspace
 

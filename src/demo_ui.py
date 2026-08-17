@@ -107,8 +107,61 @@ def retrieve_for_case(
       * Keep user_id and thread_id from the loaded case.
       * Finish with memory.assemble_context(layers).
     """
-    _ = (memory, case, extra_messages, settings, ShortTermMemory)
-    raise NotImplementedError("BONUS TODO: run student retrieval for the loaded case")
+    dataset = load_dataset()
+    user_id = case.get("user_id", "")
+    thread_id = case.get("thread_id", "")
+    query = case.get("query", "")
+
+    short_term = ShortTermMemory(
+        strategy="sliding", max_recent_messages=6, pressure_tokens=450
+    )
+    messages = case.get("fixture_messages")
+    if not messages:
+        user = next(
+            (u for u in dataset.get("users", []) if u.get("user_id") == user_id),
+            None,
+        )
+        session = next(
+            (
+                s
+                for s in (user.get("sessions", []) if user else [])
+                if s.get("thread_id") == thread_id
+            ),
+            None,
+        )
+        messages = (session or {}).get("messages", [])
+
+    for message in [*(messages or []), *(extra_messages or [])]:
+        short_term.add(message["role"], message["content"])
+
+    layers = {
+        "short_term": "",
+        "long_term": "",
+        "episodic": "",
+        "semantic": "",
+    }
+    expected_layer = case.get("expected_layer", "")
+    wanted = (
+        case.get("retrieve_layers") or ["long_term", "semantic"]
+        if expected_layer == "mixed"
+        else [expected_layer]
+    )
+
+    if "short_term" in wanted:
+        layers["short_term"] = short_term.render()
+    if "long_term" in wanted and user_id and thread_id:
+        layers["long_term"] = memory.retrieve_long_term(user_id, thread_id, query)
+    if "episodic" in wanted and user_id:
+        layers["episodic"] = memory.retrieve_episodic(user_id, query)
+    if "semantic" in wanted:
+        layers["semantic"] = memory.retrieve_semantic(settings.semantic_graph_id, query)
+
+    merged_context, breakdown = memory.assemble_context(layers)
+    return {
+        "merged_context": merged_context,
+        "layers": layers,
+        "budget": breakdown,
+    }
 
 
 def main() -> None:
